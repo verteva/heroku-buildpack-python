@@ -90,18 +90,6 @@ source "$BIN_DIR/utils"
 # shellcheck source=bin/warnings
 source "$BIN_DIR/warnings"
 
-if [[ "${STACK}" == "cedar-14" ]]; then
-  mcount "failure.unsupported.cedar-14"
-  puts-warn "The Cedar-14 stack is no longer supported by the latest release of this buildpack."
-  puts-warn
-  puts-warn "Please switch to the Cedar-14 support branch by using this buildpack URL:"
-  puts-warn "https://github.com/heroku/heroku-buildpack-python#cedar-14"
-  puts-warn
-  puts-warn "For instructions on how to change the buildpacks used by an app, see:"
-  puts-warn "https://devcenter.heroku.com/articles/buildpacks#setting-a-buildpack-on-an-application"
-  exit 1
-fi
-
 if [[ -f "${ENV_DIR}/BUILD_WITH_GEO_LIBRARIES" ]]; then
   mcount "failure.unsupported.BUILD_WITH_GEO_LIBRARIES"
   puts-warn "The Python buildpack's legacy BUILD_WITH_GEO_LIBRARIES functonality is"
@@ -222,11 +210,19 @@ fi
 source "$BIN_DIR/steps/pipenv-python-version"
 
 if [[ -f runtime.txt ]]; then
+  # PYTHON_VERSION_SOURCE may have already been set by the pipenv-python-version step.
+  # TODO: Refactor this and stop pipenv-python-version using runtime.txt as an API.
+  PYTHON_VERSION_SOURCE=${PYTHON_VERSION_SOURCE:-"runtime.txt"}
+  puts-step "Using Python version specified in ${PYTHON_VERSION_SOURCE}"
   mcount "version.reason.python.specified"
 elif [[ -n "${CACHED_PYTHON_VERSION:-}" ]]; then
+  puts-step "No Python version was specified. Using the same version as the last build: ${CACHED_PYTHON_VERSION}"
+  echo "       To use a different version, see: https://devcenter.heroku.com/articles/python-runtimes"
   mcount "version.reason.python.cached"
   echo "${CACHED_PYTHON_VERSION}" > runtime.txt
 else
+  puts-step "No Python version was specified. Using the buildpack default: ${DEFAULT_PYTHON_VERSION}"
+  echo "       To use a different version, see: https://devcenter.heroku.com/articles/python-runtimes"
   mcount "version.reason.python.default"
   echo "${DEFAULT_PYTHON_VERSION}" > runtime.txt
 fi
@@ -240,7 +236,8 @@ mkdir -p /app/.heroku/src
 # they occur in a temp directory. Beacuse Python is not portable, we must create
 # symlinks to emulate that we are operating in `/app` during the build process.
 # This is (hopefully obviously) because apps end up running from `/app` in production.
-if [[ $BUILD_DIR != '/app' ]]; then
+# Realpath is used to support use-cases where one of the locations is a symlink to the other.
+if [[ "$(realpath "${BUILD_DIR}")" != "$(realpath /app)" ]]; then
     # python expects to reside in /app, so set up symlinks
     # we will not remove these later so subsequent buildpacks can still invoke it
     ln -nsf "$BUILD_DIR/.heroku/python" /app/.heroku/python
@@ -302,7 +299,8 @@ mtime "nltk.download.time" "${start}"
 # Support for editable installations. Here, we are copying pip–created src directory,
 # and copying it into the proper place (the logical place to do this was early, but it must be done here).
 # In CI, $BUILD_DIR is /app.
-if [[ ! "$BUILD_DIR" == "/app" ]]; then
+# Realpath is used to support use-cases where one of the locations is a symlink to the other.
+if [[ "$(realpath "${BUILD_DIR}")" != "$(realpath /app)" ]]; then
   rm -rf "$BUILD_DIR/.heroku/src"
   deep-cp /app/.heroku/src "$BUILD_DIR/.heroku/src"
 fi
