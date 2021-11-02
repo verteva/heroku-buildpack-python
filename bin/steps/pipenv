@@ -9,8 +9,8 @@ set -e
 if [[ -f Pipfile.lock ]]; then
     if [[ -f .heroku/python/Pipfile.lock.sha256 ]]; then
         if [[ $(openssl dgst -sha256 Pipfile.lock) == $(cat .heroku/python/Pipfile.lock.sha256) ]]; then
-            # Don't skip installation if there are git deps.
-            if ! grep -q '\.git' Pipfile.lock; then
+            # Don't skip installation if there are git deps defined in Pipfile
+            if ! `grep -q '\.git' Pipfile | grep -v "ref"`; then
                 echo "Skipping installation, as Pipfile.lock hasn't changed since last deploy." | indent
 
                 mcount "tool.pipenv"
@@ -57,7 +57,7 @@ if [ ! "$SKIP_PIPENV_INSTALL" ]; then
 
         # Install the dependencies.
         elif [[ ! -f Pipfile.lock ]]; then
-            puts-step "Installing dependencies with Pipenv ${PIPENV_VERSION}"
+            puts-step "Installing dependencies with Pipenv --skip-lock ${PIPENV_VERSION}"
             /app/.heroku/python/bin/pipenv install --system --skip-lock 2>&1 | indent
 
         else
@@ -65,7 +65,7 @@ if [ ! "$SKIP_PIPENV_INSTALL" ]; then
             cp requirements.txt .heroku/python/requirements-declared.txt
             openssl dgst -sha256 Pipfile.lock > .heroku/python/Pipfile.lock.sha256
 
-            puts-step "Installing dependencies with Pipenv ${PIPENV_VERSION}"
+            puts-step "Installing dependencies with Pipenv --deploy ${PIPENV_VERSION}"
             /app/.heroku/python/bin/pipenv install --system --deploy 2>&1 | indent
         fi
     fi
